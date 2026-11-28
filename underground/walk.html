@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>臺北車站地下走走看</title>
+<!-- 第一人稱走動版（2026-11-28）。資料同 index.html（示意，非測量）。操作：WASD／方向鍵移動、拖曳滑鼠轉頭、靠近樓梯按 E 上下樓。 -->
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#20262a;font-family:"Segoe UI","Microsoft JhengHei",sans-serif}
+  #where{position:absolute;left:50%;top:16px;transform:translateX(-50%);background:rgba(20,30,34,.78);color:#fff;padding:10px 22px;border-radius:10px;font-size:22px;letter-spacing:.04em;text-align:center}
+  #where small{display:block;font-size:13px;opacity:.75;margin-top:3px}
+  #toast{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);color:#fff;font-size:38px;font-weight:700;text-shadow:0 2px 12px #000;opacity:0;transition:opacity .4s;pointer-events:none;text-align:center}
+  #stair{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);background:#5FC3E4;color:#10262e;padding:10px 20px;border-radius:8px;font-size:18px;font-weight:600;display:none}
+  .panel{position:absolute;right:16px;background:rgba(255,255,255,.94);border-radius:10px;padding:8px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+  .panel b{display:block;font-size:13px;color:#1F3A3D;margin:0 0 4px 4px}
+  #plan{top:16px} #iso{top:300px}
+  #help{position:absolute;left:16px;bottom:16px;color:#dfe6e8;font-size:13px;background:rgba(20,30,34,.7);padding:10px 14px;border-radius:8px;line-height:1.7}
+  #pad{position:absolute;left:16px;bottom:120px;display:grid;grid-template-columns:repeat(3,46px);gap:6px}
+  #pad button{height:46px;border:0;border-radius:8px;background:rgba(255,255,255,.85);font-size:18px}
+</style>
+<script type="importmap">{"imports":{"three":"./lib/three.module.js"}}</script>
+</head>
+<body>
+<div id="where"></div><div id="toast"></div><div id="stair"></div>
+<div class="panel" id="plan"><b>平面：目前樓層</b><canvas id="pc" width="300" height="230"></canvas></div>
+<div class="panel" id="iso"><b>立體：在整個地下的哪裡</b><canvas id="ic" width="300" height="220"></canvas></div>
+<div id="pad"><span></span><button data-k="f">▲</button><span></span><button data-k="l">◀</button><button data-k="b">▼</button><button data-k="r">▶</button></div>
+<div id="help">WASD／方向鍵：走動　拖曳滑鼠：轉頭　E：靠近樓梯時上下樓<br>示意模型：位置依導覽圖估計，深度與尺寸非測量值</div>
+<script type="module">
+import * as THREE from "three";
+const O=[650,440], P=(x,y)=>[x-O[0],y-O[1]];
+const DEPTH={B1:-7,B2:-14,B3:-21,B4:-28}, ROOM=4.2;
+const C={Y:"#E8B83A",K:"#C9876A",Z:"#D98F9C",R:"#C94F5A",hall:"#C9D2DA",tra:"#5B6FA8",A1:"#9C7BC0",BL:"#2F64B0",RD:"#C8312F",G:"#3E8E5A",park:"#9AA4AA"};
+// 名稱、層、x0,y0,x1,y1、顏色（可走動區）
+const Z=[
+ ["Y 區台北地下街","B1",130,245,1035,322,C.Y],["臺鐵／高鐵 B1 大廳","B1",630,322,1040,482,C.hall],["K 區地下街","B1",605,480,950,548,C.K],
+ ["Z 區站前地下街","B1",410,546,790,600,C.Z],["捷運臺北車站大廳","B1",790,546,1090,600,C.BL],["機場捷運 A1 大廳","B1",180,322,610,400,C.A1],
+ ["捷運北門站","B1",20,300,100,470,C.G],["往北門通道","B1",95,300,135,330,C.G],["K 區往捷運通道","B1",940,482,1000,550,C.K],
+ ["臺鐵／高鐵月台","B2",700,360,1000,455,C.tra],["機場捷運 A1 月台","B2",200,345,590,385,C.A1],
+ ["板南線月台","B3",700,562,1100,592,C.BL],["淡水信義線月台","B4",1040,400,1080,700,C.RD]];
+const ZS=[[1040,250],[1065,170],[1100,60],[1150,-120]];   // 中山地下街中心線（B1，寬約 30 m）
+const LINKS=[[700,470,"B1","B2"],[960,470,"B1","B2"],[830,470,"B1","B2"],[400,360,"B1","B2"],[560,360,"B1","B2"],
+ [760,575,"B1","B3"],[1000,575,"B1","B3"],[1060,565,"B1","B4"],[1060,430,"B1","B4"]];
+
+const R=new THREE.WebGLRenderer({antialias:true}); R.setPixelRatio(Math.min(2,devicePixelRatio)); R.setSize(innerWidth,innerHeight); document.body.prepend(R.domElement);
+const S=new THREE.Scene(); S.background=new THREE.Color(0x20262a); S.fog=new THREE.Fog(0x20262a,40,260);
+const cam=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,800);
+S.add(new THREE.HemisphereLight(0xffffff,0x777777,1.6));S.add(new THREE.AmbientLight(0xffffff,.5));   // 不用逐區點光源（上百盞會讓 shader 編譯卡住）
+function room(x0,z0,x1,z1,y,col){ // 從裡面看的房間：地板、天花、四牆
+  const w=x1-x0,d=z1-z0,g=new THREE.BoxGeometry(w,ROOM,d);
+  const m=new THREE.MeshStandardMaterial({color:col,side:THREE.BackSide,roughness:.9});
+  const me=new THREE.Mesh(g,m); me.position.set((x0+x1)/2,y+ROOM/2,(z0+z1)/2); S.add(me);
+  const fl=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshStandardMaterial({color:0xE7E3DA,roughness:1})); fl.rotation.x=-Math.PI/2; fl.position.set((x0+x1)/2,y+.02,(z0+z1)/2); S.add(fl);
+}
+function sign(t,x,y,z,col){const c=document.createElement("canvas"),g=c.getContext("2d");g.font='700 64px "Microsoft JhengHei"';c.width=g.measureText(t).width+60;c.height=100;g.font='700 64px "Microsoft JhengHei"';g.fillStyle=col;g.fillRect(0,0,c.width,c.height);g.fillStyle="#fff";g.textBaseline="middle";g.fillText(t,30,52);
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));s.scale.set(c.width/40,2.5,1);s.position.set(x,y,z);S.add(s);}
+for(const [n,lv,a,b,c,d,col] of Z){const[x0,z0]=P(a,b),[x1,z1]=P(c,d);room(x0,z0,x1,z1,DEPTH[lv],col);sign(n,(x0+x1)/2,DEPTH[lv]+3.2,(z0+z1)/2,col);}
+for(let i=0;i<ZS.length-1;i++){const[a,b]=P(...ZS[i]),[c,d]=P(...ZS[i+1]);const len=Math.hypot(c-a,d-b);const g=new THREE.Mesh(new THREE.BoxGeometry(len,ROOM,30),new THREE.MeshStandardMaterial({color:C.R,side:THREE.BackSide}));g.position.set((a+c)/2,DEPTH.B1+ROOM/2,(b+d)/2);g.rotation.y=-Math.atan2(d-b,c-a);S.add(g);}
+sign("中山地下街 → 中山站",...(()=>{const[a,b]=P(1080,120);return[a,DEPTH.B1+3.2,b]})(),C.R);
+window.BUILD_STAIRS=()=>{for(const L of LINKS){const [x,y,l0,l1]=L;const E=END(L);for(const lv of [l0,l1]){const[a,b]=E[lv];const s=new THREE.Mesh(new THREE.BoxGeometry(5,.3,8),new THREE.MeshStandardMaterial({color:0x5FC3E4,emissive:0x1d5566}));s.position.set(a,DEPTH[lv]+.15,b);S.add(s);sign(lv===l0?"樓梯 往 "+l1:"樓梯 往 "+l0,a,DEPTH[lv]+2.4,b,"#2B8FB0");}}};
+
+// ── 位置判斷
+function inZS(px,pz){for(let i=0;i<ZS.length-1;i++){const[a,b]=P(...ZS[i]),[c,d]=P(...ZS[i+1]);const vx=c-a,vz=d-b,t=Math.max(0,Math.min(1,((px-a)*vx+(pz-b)*vz)/(vx*vx+vz*vz)));if(Math.hypot(px-a-vx*t,pz-b-vz*t)<14)return true;}return false;}
+function zoneAt(lv,px,pz){let best=null,ar=1e9;for(const z of Z){if(z[1]!==lv)continue;const[x0,z0]=P(z[2],z[3]),[x1,z1]=P(z[4],z[5]);if(px>x0+.6&&px<x1-.6&&pz>z0+.6&&pz<z1-.6){const a=(x1-x0)*(z1-z0);if(a<ar){ar=a;best=z[0];}}}
+  if(!best&&lv==="B1"&&inZS(px,pz))best="中山地下街";return best;}
+let lv="B1",pos=new THREE.Vector3(...(()=>{const[a,b]=P(835,400);return[a,0,b]})()),yaw=Math.PI,pitch=0,cur=null;
+const where=document.getElementById("where"),toast=document.getElementById("toast"),stair=document.getElementById("stair");
+function showToast(t){toast.textContent=t;toast.style.opacity=1;clearTimeout(showToast.h);showToast.h=setTimeout(()=>toast.style.opacity=0,1600);}
+
+// ── 輸入
+const keys={};addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true;if(e.key.toLowerCase()==="e")useStair();});addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+let drag=null;R.domElement.addEventListener("pointerdown",e=>drag=[e.clientX,e.clientY]);addEventListener("pointerup",()=>drag=null);
+addEventListener("pointermove",e=>{if(!drag)return;yaw-= (e.clientX-drag[0])*.005;pitch=Math.max(-1,Math.min(1,pitch-(e.clientY-drag[1])*.004));drag=[e.clientX,e.clientY];});
+const pad={};for(const b of document.querySelectorAll("#pad button")){b.onpointerdown=()=>pad[b.dataset.k]=1;b.onpointerup=b.onpointerleave=()=>pad[b.dataset.k]=0;}
+function snapPt(L,px,pz){ if(zoneAt(L,px,pz))return[px,pz]; let best=[px,pz],bd=1e9;
+  for(const z of Z){if(z[1]!==L)continue;const[x0,z0]=P(z[2],z[3]),[x1,z1]=P(z[4],z[5]);const cx=Math.max(x0+2,Math.min(x1-2,px)),cz=Math.max(z0+2,Math.min(z1-2,pz));const d=Math.hypot(cx-px,cz-pz);if(d<bd){bd=d;best=[cx,cz];}}
+  return best;}
+const END=l=>({[l[2]]:snapPt(l[2],...P(l[0],l[1])),[l[3]]:snapPt(l[3],...P(l[0],l[1]))});   // 每座樓梯在兩層各自的位置
+let near=null;
+function snap(){ // 到達點若不在可走區，移到同層最近的可走點
+  if(zoneAt(lv,pos.x,pos.z))return; let best=null,bd=1e9;
+  for(const z of Z){if(z[1]!==lv)continue;const[x0,z0]=P(z[2],z[3]),[x1,z1]=P(z[4],z[5]);const cx=Math.max(x0+2,Math.min(x1-2,pos.x)),cz=Math.max(z0+2,Math.min(z1-2,pos.z));const d=Math.hypot(cx-pos.x,cz-pos.z);if(d<bd){bd=d;best=[cx,cz];}}
+  if(best)pos.set(best[0],0,best[1]);}
+function useStair(){if(!near)return;const[x,y,l0,l1]=near;lv=lv===l0?l1:l0;const[a,b]=END(near)[lv];pos.set(a,0,b);showToast("到 "+lv+(lv==="B2"?"　臺鐵／高鐵、機場捷運月台":lv==="B3"?"　板南線月台":lv==="B4"?"　淡水信義線月台":"　大廳與地下街"));}
+stair.onclick=useStair;
+
+// ── 平面附圖
+const pc=document.getElementById("pc").getContext("2d");
+function drawPlan(){const W=300,H=230,sx=W/1250,ox=-0;pc.clearRect(0,0,W,H);pc.fillStyle="#F3F4F1";pc.fillRect(0,0,W,H);
+  const X=x=>(x+50)*sx*.98, Yy=y=>(y+160)*sx*.98;
+  for(const z of Z){pc.globalAlpha=z[1]===lv?1:.15;pc.fillStyle=z[6];pc.fillRect(X(z[2]),Yy(z[3]),(z[4]-z[2])*sx*.98,(z[5]-z[3])*sx*.98);}
+  pc.globalAlpha=lv==="B1"?1:.15;pc.strokeStyle=C.R;pc.lineWidth=6;pc.beginPath();ZS.forEach(([x,y],i)=>i?pc.lineTo(X(x),Yy(y)):pc.moveTo(X(x),Yy(y)));pc.stroke();pc.globalAlpha=1;
+  for(const L of LINKS)if(L[2]===lv||L[3]===lv){const[a,b]=END(L)[lv];pc.fillStyle="#2B8FB0";pc.fillRect(X(a+O[0])-3,Yy(b+O[1])-3,6,6);}
+  const px=X(pos.x+O[0]),py=Yy(pos.z+O[1]);pc.fillStyle="#E0312A";pc.beginPath();pc.arc(px,py,6,0,7);pc.fill();
+  pc.strokeStyle="#E0312A";pc.lineWidth=3;pc.beginPath();pc.moveTo(px,py);pc.lineTo(px-Math.sin(yaw)*16,py-Math.cos(yaw)*16);pc.stroke();
+  pc.fillStyle="#1F3A3D";pc.font="bold 15px Microsoft JhengHei";pc.fillText(lv+"（藍點＝樓梯）",8,H-10);pc.fillText("N↑",W-30,18);}
+
+// ── 立體附圖
+const R2=new THREE.WebGLRenderer({canvas:document.getElementById("ic"),antialias:true});R2.setClearColor(0xF3F4F1);
+const S2=new THREE.Scene(),cam2=new THREE.PerspectiveCamera(30,300/220,1,6000);cam2.position.set(500,900,1100);cam2.lookAt(150,-120,50);
+S2.add(new THREE.HemisphereLight(0xffffff,0x999999,1.3));const VS=6;
+for(const z of Z){const[x0,z0]=P(z[2],z[3]),[x1,z1]=P(z[4],z[5]);const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,20,z1-z0),new THREE.MeshStandardMaterial({color:z[6],transparent:true,opacity:.75}));m.position.set((x0+x1)/2,DEPTH[z[1]]*VS+10,(z0+z1)/2);S2.add(m);}
+const mk=new THREE.Mesh(new THREE.SphereGeometry(22,16,12),new THREE.MeshBasicMaterial({color:0xE0312A}));S2.add(mk);
+const pole=new THREE.Mesh(new THREE.CylinderGeometry(3,3,400),new THREE.MeshBasicMaterial({color:0xE0312A}));S2.add(pole);
+
+// ── 主迴圈
+let last=performance.now();
+function loop(now){const dt=Math.min(.05,(now-last)/1000);last=now;
+  const f=(keys.w||keys.arrowup||pad.f?1:0)-(keys.s||keys.arrowdown||pad.b?1:0), t=(keys.d||pad.r?1:0)-(keys.a||pad.l?1:0);
+  if(keys.arrowleft)yaw+=1.8*dt; if(keys.arrowright)yaw-=1.8*dt;
+  const sp=(keys.shift?14:7)*dt, nx=pos.x+(-Math.sin(yaw)*f+Math.cos(yaw)*t)*sp, nz=pos.z+(-Math.cos(yaw)*f-Math.sin(yaw)*t)*sp;
+  if(zoneAt(lv,nx,nz))pos.x=nx,pos.z=nz; else if(zoneAt(lv,nx,pos.z))pos.x=nx; else if(zoneAt(lv,pos.x,nz))pos.z=nz;   // 碰牆滑行
+  cam.position.set(pos.x,DEPTH[lv]+1.6,pos.z);cam.rotation.set(pitch,yaw,0,"YXZ");
+  const z=zoneAt(lv,pos.x,pos.z);if(z!==cur){cur=z;showToast(z||"");}where.innerHTML=`${lv}　${cur||""}<small>${{B1:"大廳與地下街層",B2:"臺鐵／高鐵、機場捷運月台層",B3:"板南線月台層",B4:"淡水信義線月台層"}[lv]}</small>`;
+  near=null;for(const L of LINKS){if(L[2]!==lv&&L[3]!==lv)continue;const[a,b]=END(L)[lv];if(Math.hypot(pos.x-a,pos.z-b)<9)near=L;}
+  if(near){const to=near[2]===lv?near[3]:near[2];stair.style.display="block";stair.textContent=`按 E（或點這裡）${DEPTH[to]<DEPTH[lv]?"下樓":"上樓"}到 ${to}`;}else stair.style.display="none";
+  R.render(S,cam);drawPlan();
+  mk.position.set(pos.x,DEPTH[lv]*VS+30,pos.z);pole.position.set(pos.x,DEPTH[lv]*VS+230,pos.z);R2.render(S2,cam2);
+  requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+addEventListener("resize",()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();R.setSize(innerWidth,innerHeight);});
+BUILD_STAIRS();window.TP=(x,y,l)=>{lv=l||'B1';const[a,b]=snapPt(lv,...P(x,y));pos.set(a,0,b);};window.READY=true;
+</script>
+</body>
+</html>
