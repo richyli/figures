@@ -27,7 +27,7 @@
 <body>
 <div id="title"><h1>臺北車站地下連通</h1><p>西起北門站、東到京站與臺北轉運站、北到中山站與雙連站（示意）</p></div>
 <div class="panel" id="left">
-  <h2>樓層</h2><div class="btns" id="floors"></div>
+  <h2>樓層（可複選）</h2><div class="btns" id="floors"></div>
   <h2>顯示區域</h2><div class="btns"><button id="gall">全選</button><button id="gnone">全不選</button></div><div id="groups"></div>
   <h2>標示</h2>
   <label><input type="checkbox" id="showE" checked> 出口</label><label><input type="checkbox" id="showS" checked> 樓梯／電扶梯</label>
@@ -62,13 +62,17 @@ function slab(w, d, col, op) { const m = _slab(w, d, col, op); m.userData.op = o
 function _slab(w, d, col, op) { return new THREE.Mesh(new THREE.BoxGeometry(w, SLAB, d), new THREE.MeshStandardMaterial({ color: col, roughness: .8, transparent: true, opacity: op })); }
 // 區域
 for (const z of ZONES) {
-  const col = z.color || GCOL[z.group], op = z.parking ? .3 : .9, y = yOf(z.level) + SLAB / 2; let cx, cz;
-  if (z.rect) { const [a, b, c, d] = z.rect; const m = slab((c - a) * SCALE, (d - b) * SCALE, z.parking ? "#A8B2B8" : col, op); cx = X((a + c) / 2); cz = Zc((b + d) / 2); m.position.set(cx, y, cz); reg(m, "zone", z.group, [z.level]);
+  const col = z.color || GCOL[z.group], op = z.parking ? .3 : .9, y = yOf(z.level) + SLAB / 2 + (z.lift || 0); let cx, cz;
+  if (z.poly) { const sh = new THREE.Shape(z.poly.map(([a, b]) => new THREE.Vector2(X(a), Zc(b)))); const geo = new THREE.ExtrudeGeometry(sh, { depth: SLAB, bevelEnabled: false }); geo.rotateX(Math.PI / 2);
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: z.parking ? "#A8B2B8" : col, roughness: .8, transparent: true, opacity: op })); m.userData.op = op; m.position.y = y + SLAB / 2; reg(m, "zone", z.group, [z.level]);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x33434a, transparent: true, opacity: .4 })); e.userData.op = .4; e.position.y = y + SLAB / 2; reg(e, "zone", z.group, [z.level]);
+    const L = z.lab || [z.poly.reduce((t, q) => t + q[0], 0) / z.poly.length, z.poly.reduce((t, q) => t + q[1], 0) / z.poly.length]; cx = X(L[0]); cz = Zc(L[1]); }
+  else if (z.rect) { const [a, b, c, d] = z.rect; const m = slab((c - a) * SCALE, (d - b) * SCALE, z.parking ? "#A8B2B8" : col, op); cx = X((a + c) / 2); cz = Zc((b + d) / 2); m.position.set(cx, y, cz); reg(m, "zone", z.group, [z.level]);
     const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0x33434a, transparent: true, opacity: .4 })); e.userData.op = .4; e.position.copy(m.position); reg(e, "zone", z.group, [z.level]); }
   else { for (let i = 0; i < z.path.length - 1; i++) { const [a, b] = z.path[i], [c, d] = z.path[i + 1]; const len = Math.hypot(c - a, d - b) * SCALE + z.w * SCALE * .5;
       const m = slab(len, z.w * SCALE, col, op); m.position.set(X((a + c) / 2), y, Zc((b + d) / 2)); m.rotation.y = -Math.atan2(d - b, c - a); reg(m, "zone", z.group, [z.level]); }
     const k = Math.floor(z.path.length / 2) - 1; cx = X(z.path[k][0]); cz = Zc(z.path[k][1]); }
-  if (!z.id.includes("-A1") && !/^Y-T|M-B1k|BM-B1a|A1-T/.test(z.id)) { const s = label(z.name, 15, "#1F3A3D"); s.position.set(cx, y + 16, cz); reg(s, "zlabel", z.group, [z.level]); }
+  if (!z.id.includes("-A1") && !/^Y-T|BM-B1a|T-B1w/.test(z.id)) { const s = label(z.name, 15, "#1F3A3D"); s.position.set(cx, y + 16, cz); reg(s, "zlabel", z.group, [z.level]); }
 }
 // 軌道：兩條並行的細長方塊，依每個點的深度連起來
 for (const tr of TRACKS) for (let i = 0; i < tr.pts.length - 1; i++) { const [a, b, da] = tr.pts[i], [c, d, db] = tr.pts[i + 1];
@@ -97,10 +101,10 @@ for (const [nm, pts] of ROADS) { for (let i = 0; i < pts.length - 1; i++) { cons
   const s = label("臺北車站（地面）", 14, "#55656A"); s.position.set(X((a + c) / 2), 40, Zc((b + d) / 2)); scene.add(s); ground.push(s); }
 
 // ── 狀態與介面
-const state = { floor: "ALL", groups: new Set(GROUPS.map(g => g[0])) };
+const state = { floors: new Set(LEVELS), groups: new Set(GROUPS.map(g => g[0])) };
 const CHK = check(); window.CHECK = { issues: CHK.issues, perLevel: CHK.perLevel };
 const $ = id => document.getElementById(id);
-for (const f of ["ALL", ...LEVELS]) { const b = document.createElement("button"); b.textContent = f === "ALL" ? "全部" : LEVEL_NAME[f]; b.dataset.f = f; b.onclick = () => { state.floor = f; apply(); }; $("floors").appendChild(b); }
+for (const f of ["ALL", ...LEVELS]) { const b = document.createElement("button"); b.textContent = f === "ALL" ? "全部" : LEVEL_NAME[f]; b.dataset.f = f; b.onclick = () => { if (f === "ALL") state.floors = new Set(state.floors.size === LEVELS.length ? [] : LEVELS); else state.floors.has(f) ? state.floors.delete(f) : state.floors.add(f); apply(); }; $("floors").appendChild(b); }
 for (const [id, nm, col] of GROUPS) { const l = document.createElement("label"); l.innerHTML = `<input type="checkbox" checked data-g="${id}"><i style="background:${col}"></i>${nm}`; l.firstChild.onchange = e => { e.target.checked ? state.groups.add(id) : state.groups.delete(id); apply(); }; $("groups").appendChild(l); }
 $("gall").onclick = () => { GROUPS.forEach(g => state.groups.add(g[0])); sync(); }; $("gnone").onclick = () => { state.groups.clear(); sync(); };
 function sync() { document.querySelectorAll("[data-g]").forEach(c => c.checked = state.groups.has(c.dataset.g)); apply(); }
@@ -108,23 +112,23 @@ for (const id of ["showE", "showS", "showZ", "showG"]) $(id).onchange = apply;
 $("tgl").onclick = () => { const r = $("right"), on = r.style.display === "none"; r.style.display = on ? "" : "none"; r.style.top = "50px"; $("tgl").textContent = on ? "關閉清單" : "顯示清單"; };   // 右側清單預設關閉（使用者 2026-11-28）
 const zname = (lv, x, y) => (zonesAt(lv, x, y, 16)[0] || {}).name || "—";
 function apply() {
-  const f = state.floor;
-  document.querySelectorAll("#floors button").forEach(b => b.classList.toggle("on", b.dataset.f === f));
+  const F = state.floors, all = F.size === LEVELS.length, ghost = F.has("G") && !F.has("B1");   // 樓層可複選；選了地面沒選 B1 時，B1 淡淡墊在下面當參照
+  document.querySelectorAll("#floors button").forEach(b => b.classList.toggle("on", b.dataset.f === "ALL" ? all : F.has(b.dataset.f)));
   for (const { o, kind, group, levels } of objs) {
-    let v = state.groups.has(group) && (f === "ALL" || levels.includes(f));
+    let v = state.groups.has(group) && levels.some(l => F.has(l));
     if (kind === "exit") v = v && $("showE").checked; if (kind === "stair") v = v && $("showS").checked; if (kind === "zlabel") v = v && $("showZ").checked;
-    if (f === "G" && kind === "zone") v = state.groups.has(group) && levels.includes("B1");   // 地面層：B1 區域淡淡地墊在下面當參照
-    if (kind === "zone" && o.material) { o.material.opacity = f === "G" ? .18 : o.userData.op; }
+    const gh = ghost && kind === "zone" && levels.includes("B1"); if (gh) v = state.groups.has(group);
+    if (kind === "zone" && o.material) o.material.opacity = gh ? .18 : o.userData.op;
     o.visible = v;
   }
-  ground.forEach(g => g.visible = $("showG").checked && (f === "ALL" || f === "G" || f === "B1"));
+  ground.forEach(g => g.visible = $("showG").checked && (F.has("G") || F.has("B1")));
   // 右側列表：這一層、這些區域的出口與樓梯
-  const lv = f === "ALL" ? null : f, G = state.groups;
-  const zs = ZONES.filter(z => G.has(z.group) && (!lv || z.level === lv));
-  const ex = EXITS.filter(e => G.has(e.group) && (!lv || lv === "G" || lv === "B1"));
-  const st = STAIRS.filter(s => G.has(s.group) && (!lv || s.levels.includes(lv)));
+  const lv = F.size === 1 ? [...F][0] : null, G = state.groups;
+  const zs = ZONES.filter(z => G.has(z.group) && F.has(z.level));
+  const ex = EXITS.filter(e => G.has(e.group) && (F.has("G") || F.has("B1")));
+  const st = STAIRS.filter(s => G.has(s.group) && s.levels.some(l => F.has(l)));
   const iss = CHK.issues;
-  let h = `<h2>${lv ? LEVEL_NAME[lv] : "全部樓層"}：${zs.length} 個區域、${ex.length} 個出口、${st.length} 座樓梯</h2>`;
+  let h = `<h2>${all ? "全部樓層" : LEVELS.filter(l => F.has(l)).map(l => LEVEL_NAME[l]).join("＋") || "未選樓層"}：${zs.length} 個區域、${ex.length} 個出口、${st.length} 座樓梯</h2>`;
   h += `<div>逐層比對：${iss.length ? `<span class="bad">${iss.length} 個問題</span><br>` + iss.join("<br>") : `<span class="ok">通過</span>（每個出口、每座樓梯的每一層都落在區域內；所有區域都能從出口走到；編號不重複）`}</div>`;
   h += `<h2>區域</h2><table>` + zs.filter(z => !z.parking).map(z => `<tr><td class="id">${z.level}</td><td>${z.name}</td><td>${GNAME[z.group]}</td></tr>`).join("") + `</table>`;
   h += `<h2>樓梯／電扶梯</h2><table><tr><th>編號</th><th>連接</th><th>所在區域${lv && lv !== "G" ? "（本層）" : ""}</th></tr>` + st.map(s => `<tr><td class="id ${s.approx ? "ap" : ""}">${s.id}</td><td>${s.levels.map(l => LEVEL_NAME[l]).join("–")}</td><td>${lv && lv !== "G" ? zname(lv, s.x, s.y) : s.note}</td></tr>`).join("") + `</table>`;
@@ -135,7 +139,7 @@ function apply() {
 const VIEWS = { "總覽": [[60, 1900, 1750], [60, -40, -380]], "車站核心": [[250, 520, 650], [250, -60, 60]], "北門—A1": [[-380, 420, 520], [-330, -50, -40]],
   "中山地下街": [[1150, 700, -150], [520, -30, -500]], "剖面（從南看）": [[150, -40, 1500], [150, -60, 0]], "正上方": [[250, 2300, -249], [250, 0, -250]] };
 window.setView = n => { const [p, t] = VIEWS[n]; cam.position.set(...p); ctl.target.set(...t); ctl.update(); };
-window.setFloor = f => { state.floor = f; apply(); }; window.setGroups = a => { state.groups = new Set(a); sync(); };
+window.setFloor = f => { state.floors = new Set(f === "ALL" ? LEVELS : [].concat(f)); apply(); }; window.setGroups = a => { state.groups = new Set(a); sync(); };
 for (const k in VIEWS) { const b = document.createElement("button"); b.textContent = k; b.onclick = () => setView(k); $("views").appendChild(b); }
 setView("總覽"); apply();
 addEventListener("resize", () => { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
