@@ -36,7 +36,7 @@
 </div>
 <div class="panel" id="right" style="display:none"><div id="list"></div></div>
 <button id="tgl" style="position:absolute;right:12px;top:12px;z-index:5">顯示清單</button>
-<div id="note">示意模型：平面依臺北市觀光傳播局地下街詳細地圖，樓層依捷運各站剖面圖；深度 ×4 垂直誇張。橘色字＝位置為估計。中山站、雙連站位置為外推。</div>
+<div id="note">示意模型：平面依臺北市觀光傳播局地下街詳細地圖，樓層依捷運各站剖面圖；深度 ×4 垂直誇張。樓梯、電扶梯是斜的（一層水平約 12 m），灰色直柱是電梯。橘色字＝位置或上行方向為估計。中山站、雙連站位置為外推。</div>
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "./lib/OrbitControls.js";
@@ -79,18 +79,30 @@ for (const tr of TRACKS) for (let i = 0; i < tr.pts.length - 1; i++) { const [a,
   const A = new THREE.Vector3(X(a), da * VS + 3, Zc(b)), B = new THREE.Vector3(X(c), db * VS + 3, Zc(d)), len = A.distanceTo(B);
   const m = new THREE.Mesh(new THREE.BoxGeometry(9, 3, len + 4), new THREE.MeshStandardMaterial({ color: tr.color })); m.position.copy(A.clone().add(B).multiplyScalar(.5)); m.lookAt(B); reg(m, "track", tr.group, tr.levels); }
 { const s = label("淡水信義線", 14, "#fff", "rgba(200,49,47,.95)"); s.position.set(X(1830), -17 * VS + 16, Zc(-150)); reg(s, "zlabel", "RL", ["B2", "B3", "B4"]); }
-// 出口：黃色小柱（地面↔B1）＋編號
-for (const e of EXITS) {
-  const x = X(e.x), z = Zc(e.y), h = -yOf("B1");
-  const p = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, h, 8), new THREE.MeshStandardMaterial({ color: 0xF2C200 })); p.position.set(x, yOf("B1") + h / 2 + SLAB / 2, z); reg(p, "exit", e.group, ["G", "B1"]);
-  const g = new THREE.Mesh(new THREE.BoxGeometry(7, 3, 7), new THREE.MeshStandardMaterial({ color: 0xF2C200 })); g.position.set(x, 1.5, z); reg(g, "exit", e.group, ["G", "B1"]);   // 地面的出入口
-  const s = label(e.id, 12, e.approx ? "#A0672A" : "#1A1A1A", "rgba(255,220,60,.95)"); s.position.set(x, 10, z); reg(s, "exit", e.group, ["G", "B1"]);
+// 斜梯：從上層樓板面的 A 點斜到下層樓板面的 B 點，兩端各一小塊平台
+function ramp(ax, az, ay, bx, bz, by, col, w, kind, group, levels) {
+  const A = new THREE.Vector3(X(ax), ay, Zc(az)), B = new THREE.Vector3(X(bx), by, Zc(bz)), len = A.distanceTo(B), mat = new THREE.MeshStandardMaterial({ color: col, roughness: .6 });
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 1.4, len), mat); m.position.copy(A.clone().add(B).multiplyScalar(.5)); m.lookAt(B); reg(m, kind, group, levels);
+  const n = Math.max(3, Math.round(len / 3.2)), dark = new THREE.MeshStandardMaterial({ color: new THREE.Color(col).multiplyScalar(.62) });   // 踏階：一階一階的橫條
+  for (let i = 1; i < n; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(w + .6, .5, .7), dark); t.position.copy(A.clone().lerp(B, i / n)); t.position.y += .9; t.rotation.y = Math.atan2(B.x - A.x, B.z - A.z); reg(t, kind, group, levels); }
+  for (const P of [A, B]) { const d = new THREE.Mesh(new THREE.BoxGeometry(w + 1.5, 1, w + 1.5), mat); d.position.copy(P); reg(d, kind, group, levels); }
 }
-// 樓梯：青色柱，跨越所連接的樓層
+// 出口：黃色。有樓梯資料的畫成斜梯（B1 梯腳 → 地面梯頂），其餘（電梯、沒有圖示、位置估計）直上直下
+const B1TOP = yOf("B1") + SLAB;
+for (const e of EXITS) {
+  let tx = e.x, ty = e.y;
+  if (e.ramps) { for (const [fx, fy, gx, gy] of e.ramps) ramp(gx, gy, .5, fx, fy, B1TOP + .5, 0xF2C200, 4, "exit", e.group, ["G", "B1"]); [, , tx, ty] = e.ramps[0]; }
+  else { const h = -B1TOP; const p = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, h, 8), new THREE.MeshStandardMaterial({ color: 0xF2C200 })); p.position.set(X(e.x), B1TOP + h / 2, Zc(e.y)); reg(p, "exit", e.group, ["G", "B1"]); }
+  for (const [gx, gy] of e.ramps ? e.ramps.map(r => [r[2], r[3]]) : [[tx, ty]]) { const g = new THREE.Mesh(new THREE.BoxGeometry(7, 3, 7), new THREE.MeshStandardMaterial({ color: 0xF2C200 })); g.position.set(X(gx), 1.5, Zc(gy)); reg(g, "exit", e.group, ["G", "B1"]); }   // 地面的出入口
+  const s = label(e.id, 12, e.approx || e.dirApprox ? "#A0672A" : "#1A1A1A", "rgba(255,220,60,.95)"); s.position.set(X(tx), 10, Zc(ty)); reg(s, "exit", e.group, ["G", "B1"]);
+}
+// 樓梯／電扶梯：青色斜梯，逐層從上層落點斜到下層落點；電梯是直的
 for (const st of STAIRS) {
-  const ys = st.levels.map(yOf), top = Math.max(...ys) + SLAB, bot = Math.min(...ys), x = X(st.x), z = Zc(st.y);
-  const p = new THREE.Mesh(new THREE.BoxGeometry(5, top - bot, 5), new THREE.MeshStandardMaterial({ color: 0x3BB4DA })); p.position.set(x, (top + bot) / 2, z); reg(p, "stair", st.group, st.levels);
-  const s = label(st.id, 12, "#fff", st.approx ? "rgba(160,103,42,.95)" : "rgba(26,120,150,.95)"); s.position.set(x + 6, (top + bot) / 2, z); reg(s, "stair", st.group, st.levels);
+  const L = st.levels, top = l => (l === "G" ? 0 : yOf(l) + SLAB) + .5; let lp;
+  if (st.elev) { const a = top(L[0]), b = top(L[L.length - 1]), [x, y] = st.pts[L[0]]; const p = new THREE.Mesh(new THREE.BoxGeometry(4, a - b, 4), new THREE.MeshStandardMaterial({ color: 0x7A8C96 })); p.position.set(X(x), (a + b) / 2, Zc(y)); reg(p, "stair", st.group, L); lp = [X(x) + 5, (a + b) / 2, Zc(y)]; }
+  else { for (let i = 0; i < L.length - 1; i++) { const [ax, ay] = st.pts[L[i]], [bx, by] = st.pts[L[i + 1]]; ramp(ax, ay, top(L[i]), bx, by, top(L[i + 1]), 0x3BB4DA, 4.5, "stair", st.group, L); }
+    const [ax, ay] = st.pts[L[0]], [bx, by] = st.pts[L[1]]; lp = [X((ax + bx) / 2) + 5, (top(L[0]) + top(L[1])) / 2 + 4, Zc((ay + by) / 2)]; }
+  const s = label(st.id, 12, "#fff", st.elev ? "rgba(90,105,115,.95)" : st.approx ? "rgba(160,103,42,.95)" : "rgba(26,120,150,.95)"); s.position.set(...lp); reg(s, "stair", st.group, L);
 }
 // 地面
 const ground = [];
@@ -131,12 +143,12 @@ function apply() {
   let h = `<h2>${all ? "全部樓層" : LEVELS.filter(l => F.has(l)).map(l => LEVEL_NAME[l]).join("＋") || "未選樓層"}：${zs.length} 個區域、${ex.length} 個出口、${st.length} 座樓梯</h2>`;
   h += `<div>逐層比對：${iss.length ? `<span class="bad">${iss.length} 個問題</span><br>` + iss.join("<br>") : `<span class="ok">通過</span>（每個出口、每座樓梯的每一層都落在區域內；所有區域都能從出口走到；編號不重複）`}</div>`;
   h += `<h2>區域</h2><table>` + zs.filter(z => !z.parking).map(z => `<tr><td class="id">${z.level}</td><td>${z.name}</td><td>${GNAME[z.group]}</td></tr>`).join("") + `</table>`;
-  h += `<h2>樓梯／電扶梯</h2><table><tr><th>編號</th><th>連接</th><th>所在區域${lv && lv !== "G" ? "（本層）" : ""}</th></tr>` + st.map(s => `<tr><td class="id ${s.approx ? "ap" : ""}">${s.id}</td><td>${s.levels.map(l => LEVEL_NAME[l]).join("–")}</td><td>${lv && lv !== "G" ? zname(lv, s.x, s.y) : s.note}</td></tr>`).join("") + `</table>`;
+  h += `<h2>樓梯／電扶梯</h2><table><tr><th>編號</th><th>連接</th><th>所在區域${lv && lv !== "G" ? "（本層）" : ""}</th></tr>` + st.map(s => `<tr><td class="id ${s.approx ? "ap" : ""}">${s.id}</td><td>${s.levels.map(l => LEVEL_NAME[l]).join("–")}</td><td>${lv && lv !== "G" ? zname(lv, ...s.pts[lv]) : s.note}</td></tr>`).join("") + `</table>`;
   if (lv === "G") h = h.replace("</h2>", "</h2><div>地面層：所有有編號的出入口都在這一層（黃色方塊）；下方淡色是 B1 的範圍。</div>");
   if (ex.length) h += `<h2>出口（地面–B1）</h2><table><tr><th>編號</th><th>B1 所在區域</th><th>通往</th></tr>` + ex.map(e => `<tr><td class="id ${e.approx ? "ap" : ""}">${e.id}</td><td>${zname("B1", e.x, e.y)}</td><td>${e.to}</td></tr>`).join("") + `</table>`;
   $("list").innerHTML = h;
 }
-const VIEWS = { "總覽": [[60, 1900, 1750], [60, -40, -380]], "車站核心": [[250, 520, 650], [250, -60, 60]], "北門—A1": [[-380, 420, 520], [-330, -50, -40]],
+const VIEWS = { "樓梯近看": [[300, 230, 620], [300, -60, 110]], "總覽": [[60, 1900, 1750], [60, -40, -380]], "車站核心": [[250, 520, 650], [250, -60, 60]], "北門—A1": [[-380, 420, 520], [-330, -50, -40]],
   "中山地下街": [[1150, 700, -150], [520, -30, -500]], "剖面（從南看）": [[150, -40, 1500], [150, -60, 0]], "正上方": [[250, 2300, -249], [250, 0, -250]] };
 window.setView = n => { const [p, t] = VIEWS[n]; cam.position.set(...p); ctl.target.set(...t); ctl.update(); };
 window.setFloor = f => { state.floors = new Set(f === "ALL" ? LEVELS : [].concat(f)); apply(); }; window.setGroups = a => { state.groups = new Set(a); sync(); };
