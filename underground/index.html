@@ -57,12 +57,13 @@ function label(text, size, color, bg = "rgba(255,255,255,.85)") {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.scale.set(c.width * .16, c.height * .16, 1); s.renderOrder = 10; return s;
 }
-function slab(w, d, col, op) { return new THREE.Mesh(new THREE.BoxGeometry(w, SLAB, d), new THREE.MeshStandardMaterial({ color: col, roughness: .8, transparent: true, opacity: op })); }
+function slab(w, d, col, op) { const m = _slab(w, d, col, op); m.userData.op = op; return m; }
+function _slab(w, d, col, op) { return new THREE.Mesh(new THREE.BoxGeometry(w, SLAB, d), new THREE.MeshStandardMaterial({ color: col, roughness: .8, transparent: true, opacity: op })); }
 // 區域
 for (const z of ZONES) {
   const col = z.color || GCOL[z.group], op = z.parking ? .3 : .9, y = yOf(z.level) + SLAB / 2; let cx, cz;
   if (z.rect) { const [a, b, c, d] = z.rect; const m = slab((c - a) * SCALE, (d - b) * SCALE, z.parking ? "#A8B2B8" : col, op); cx = X((a + c) / 2); cz = Zc((b + d) / 2); m.position.set(cx, y, cz); reg(m, "zone", z.group, [z.level]);
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0x33434a, transparent: true, opacity: .4 })); e.position.copy(m.position); reg(e, "zone", z.group, [z.level]); }
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0x33434a, transparent: true, opacity: .4 })); e.userData.op = .4; e.position.copy(m.position); reg(e, "zone", z.group, [z.level]); }
   else { for (let i = 0; i < z.path.length - 1; i++) { const [a, b] = z.path[i], [c, d] = z.path[i + 1]; const len = Math.hypot(c - a, d - b) * SCALE + z.w * SCALE * .5;
       const m = slab(len, z.w * SCALE, col, op); m.position.set(X((a + c) / 2), y, Zc((b + d) / 2)); m.rotation.y = -Math.atan2(d - b, c - a); reg(m, "zone", z.group, [z.level]); }
     const k = Math.floor(z.path.length / 2) - 1; cx = X(z.path[k][0]); cz = Zc(z.path[k][1]); }
@@ -77,7 +78,8 @@ for (const tr of TRACKS) for (let i = 0; i < tr.pts.length - 1; i++) { const [a,
 for (const e of EXITS) {
   const x = X(e.x), z = Zc(e.y), h = -yOf("B1");
   const p = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, h, 8), new THREE.MeshStandardMaterial({ color: 0xF2C200 })); p.position.set(x, yOf("B1") + h / 2 + SLAB / 2, z); reg(p, "exit", e.group, ["G", "B1"]);
-  const s = label(e.id, 12, e.approx ? "#A0672A" : "#1A1A1A", "rgba(255,220,60,.95)"); s.position.set(x, 8, z); reg(s, "exit", e.group, ["G", "B1"]);
+  const g = new THREE.Mesh(new THREE.BoxGeometry(7, 3, 7), new THREE.MeshStandardMaterial({ color: 0xF2C200 })); g.position.set(x, 1.5, z); reg(g, "exit", e.group, ["G", "B1"]);   // 地面的出入口
+  const s = label(e.id, 12, e.approx ? "#A0672A" : "#1A1A1A", "rgba(255,220,60,.95)"); s.position.set(x, 10, z); reg(s, "exit", e.group, ["G", "B1"]);
 }
 // 樓梯：青色柱，跨越所連接的樓層
 for (const st of STAIRS) {
@@ -109,7 +111,8 @@ function apply() {
   for (const { o, kind, group, levels } of objs) {
     let v = state.groups.has(group) && (f === "ALL" || levels.includes(f));
     if (kind === "exit") v = v && $("showE").checked; if (kind === "stair") v = v && $("showS").checked; if (kind === "zlabel") v = v && $("showZ").checked;
-    if (f === "G" && kind === "zone") v = false;
+    if (f === "G" && kind === "zone") v = state.groups.has(group) && levels.includes("B1");   // 地面層：B1 區域淡淡地墊在下面當參照
+    if (kind === "zone" && o.material) { o.material.opacity = f === "G" ? .18 : o.userData.op; }
     o.visible = v;
   }
   ground.forEach(g => g.visible = $("showG").checked && (f === "ALL" || f === "G" || f === "B1"));
@@ -123,6 +126,7 @@ function apply() {
   h += `<div>逐層比對：${iss.length ? `<span class="bad">${iss.length} 個問題</span><br>` + iss.join("<br>") : `<span class="ok">通過</span>（每個出口、每座樓梯的每一層都落在區域內；所有區域都能從出口走到；編號不重複）`}</div>`;
   h += `<h2>區域</h2><table>` + zs.filter(z => !z.parking).map(z => `<tr><td class="id">${z.level}</td><td>${z.name}</td><td>${GNAME[z.group]}</td></tr>`).join("") + `</table>`;
   h += `<h2>樓梯／電扶梯</h2><table><tr><th>編號</th><th>連接</th><th>所在區域${lv && lv !== "G" ? "（本層）" : ""}</th></tr>` + st.map(s => `<tr><td class="id ${s.approx ? "ap" : ""}">${s.id}</td><td>${s.levels.map(l => LEVEL_NAME[l]).join("–")}</td><td>${lv && lv !== "G" ? zname(lv, s.x, s.y) : s.note}</td></tr>`).join("") + `</table>`;
+  if (lv === "G") h = h.replace("</h2>", "</h2><div>地面層：所有有編號的出入口都在這一層（黃色方塊）；下方淡色是 B1 的範圍。</div>");
   if (ex.length) h += `<h2>出口（地面–B1）</h2><table><tr><th>編號</th><th>B1 所在區域</th><th>通往</th></tr>` + ex.map(e => `<tr><td class="id ${e.approx ? "ap" : ""}">${e.id}</td><td>${zname("B1", e.x, e.y)}</td><td>${e.to}</td></tr>`).join("") + `</table>`;
   $("list").innerHTML = h;
 }
