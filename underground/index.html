@@ -4,173 +4,129 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>臺北車站地下連通 3D</title>
-<!--
-  臺北車站地下連通 3D 模型（示意）。2026-11-28 依 topics/Underground/ 的參考圖製作：
-  平面：臺北市政府觀光傳播局「台北車站地下層及周邊地下街地圖」（約 1 px＝1 m，Y 區地下街約 800 m）；
-  層次：臺北車站立體導覽圖（2014，wei 製作）——B1 大廳與地下街、B2 臺鐵高鐵月台、B3 板南線月台、B4 淡水信義線月台；
-  中山地下街：中山地下街資訊圖。尺寸與深度為依圖估計的示意值，不是測量值。
-  座標：x 向東、z 向南（公尺），y 向上；原點約在臺鐵臺北車站大樓中心。
--->
+<!-- 臺北車站地下連通 3D（示意）：北門站→京站、往北到中山站與雙連站。資料與來源見 data.js。
+     可切換樓層、勾選區域；出口與樓梯用自訂的全區唯一編號，右側列表與 data.js 的 check() 逐層比對。 -->
 <style>
-  :root { --bg: #EEF1EE; --ink: #1F3A3D; }
-  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; }
-  #title { position: absolute; left: 24px; top: 18px; color: var(--ink); pointer-events: none; }
-  #title h1 { margin: 0; font-size: 30px; letter-spacing: .06em; }
-  #title p { margin: 6px 0 0; font-size: 14px; opacity: .75; }
-  #legend { position: absolute; right: 22px; top: 18px; background: rgba(255,255,255,.88); padding: 12px 14px; border-radius: 8px; font-size: 13px; color: var(--ink); line-height: 1.75; }
-  #legend i { display: inline-block; width: 14px; height: 10px; margin-right: 7px; vertical-align: middle; border-radius: 2px; }
-  #views { position: absolute; left: 24px; bottom: 18px; display: flex; gap: 8px; }
-  #views button { border: 1px solid #9DB3B5; background: #fff; color: var(--ink); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-  #note { position: absolute; right: 22px; bottom: 14px; font-size: 11px; color: #5A6B6D; max-width: 520px; text-align: right; }
+  :root { --ink:#1F3A3D; }
+  html,body{margin:0;height:100%;background:#EEF1EE;overflow:hidden;font-family:"Segoe UI","Microsoft JhengHei",sans-serif;color:var(--ink)}
+  #title{position:absolute;left:300px;top:14px;pointer-events:none}
+  #title h1{margin:0;font-size:26px;letter-spacing:.05em} #title p{margin:4px 0 0;font-size:13px;opacity:.75}
+  .panel{position:absolute;top:12px;bottom:12px;width:270px;background:rgba(255,255,255,.93);border-radius:10px;padding:12px 14px;box-sizing:border-box;overflow:auto;font-size:13px}
+  #left{left:12px} #right{right:12px;width:330px}
+  h2{font-size:14px;margin:12px 0 6px} h2:first-child{margin-top:0}
+  .btns{display:flex;flex-wrap:wrap;gap:6px}
+  button{border:1px solid #9DB3B5;background:#fff;color:var(--ink);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:13px}
+  button.on{background:#2A6369;color:#fff;border-color:#2A6369}
+  label{display:block;line-height:1.9;cursor:pointer} label i{display:inline-block;width:12px;height:12px;border-radius:2px;margin:0 6px 0 4px;vertical-align:-1px}
+  table{border-collapse:collapse;width:100%} td,th{padding:3px 4px;border-bottom:1px solid #E3E8E8;text-align:left;vertical-align:top} th{font-size:12px;color:#5A6B6D}
+  td.id{font-weight:700;white-space:nowrap} .ap{color:#A0672A} .ok{color:#2A7A4A;font-weight:700} .bad{color:#B3362B;font-weight:700}
+  #note{position:absolute;left:300px;bottom:12px;font-size:11px;color:#5A6B6D;max-width:calc(100% - 660px)}
 </style>
 <script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
 </head>
 <body>
-<div id="title"><h1>臺北車站地下連通</h1><p>B1 地下街與車站大廳 · B2 臺鐵高鐵 · B3 板南線 · B4 淡水信義線（示意）</p></div>
-<div id="legend"></div>
-<div id="views"></div>
-<div id="note">示意模型：平面依臺北市觀光傳播局地下街導覽圖、層次依臺北車站立體導覽圖估計，深度與尺寸非測量值</div>
+<div id="title"><h1>臺北車站地下連通</h1><p>西起北門站、東到京站與臺北轉運站、北到中山站與雙連站（示意）</p></div>
+<div class="panel" id="left">
+  <h2>樓層</h2><div class="btns" id="floors"></div>
+  <h2>顯示區域</h2><div class="btns"><button id="gall">全選</button><button id="gnone">全不選</button></div><div id="groups"></div>
+  <h2>標示</h2>
+  <label><input type="checkbox" id="showE" checked> 出口</label><label><input type="checkbox" id="showS" checked> 樓梯／電扶梯</label>
+  <label><input type="checkbox" id="showZ" checked> 區域名稱</label><label><input type="checkbox" id="showG" checked> 地面道路</label>
+  <h2>視角</h2><div class="btns" id="views"></div>
+</div>
+<div class="panel" id="right"><div id="list"></div></div>
+<div id="note">示意模型：平面依臺北市觀光傳播局地下街詳細地圖，樓層依捷運各站剖面圖；深度 ×4 垂直誇張。橘色字＝位置為估計。中山站、雙連站位置為外推。</div>
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "./lib/OrbitControls.js";
+import { SCALE, ORIGIN, LEVELS, LEVEL_NAME, GROUPS, ZONES, EXITS, STAIRS, ROADS, STATION, zonesAt, check } from "./data.js";
 
-// ── 依導覽圖量的位置（像素≈公尺）；轉成以 (650, 440) 為原點
-const O = [650, 440];
-const P = (x, y) => [x - O[0], y - O[1]];
-const DEPTH = { G: 0, B1: -7, B2: -14, B3: -21, B4: -28 };
-const H = { B1: 5, B2: 5, B3: 5, B4: 5 };
-
-const C = {
-  Y: "#E8B83A", K: "#C9876A", Z: "#D98F9C", R: "#C94F5A", hall: "#D9DEE3",
-  tra: "#5B6FA8", A1: "#9C7BC0", BL: "#2F64B0", RD: "#C8312F", G: "#3E8E5A", park: "#A8B2B8"
-};
-// 名稱、層、x0,y0,x1,y1（導覽圖像素）、顏色、說明
-const ZONES = [
-  ["Y 區 台北地下街", "B1", 130, 245, 1035, 322, C.Y, "Y1–Y28，市民大道下，約 800 m"],
-  ["K 區地下街", "B1", 605, 482, 950, 545, C.K, "K1–K12"],
-  ["Z 區站前地下街", "B1", 410, 548, 790, 600, C.Z, "Z1–Z10，忠孝西路下"],
-  ["捷運臺北車站大廳", "B1", 790, 548, 1090, 600, C.BL, "M1–M8"],
-  ["臺鐵／高鐵 B1 大廳", "B1", 630, 325, 1040, 480, C.hall, "售票、閘門"],
-  ["西區停車場", "B1", 632, 342, 750, 470, C.park, ""],
-  ["東區停車場", "B1", 1030, 330, 1110, 480, C.park, ""],
-  ["機場捷運 A1 大廳", "B1", 180, 325, 610, 400, C.A1, ""],
-  ["捷運北門站", "B1", 20, 322, 100, 470, C.G, "松山新店線"],
-  ["臺鐵／高鐵月台", "B2", 700, 360, 1000, 455, C.tra, "1–4 月台"],
-  ["機場捷運 A1 月台", "B2", 200, 345, 590, 385, C.A1, ""],
-  ["板南線月台", "B3", 700, 565, 1100, 590, C.BL, "往南港／永寧"],
-  ["淡水信義線月台", "B4", 1045, 400, 1075, 700, C.RD, "往淡水／象山"],
-];
-// 中山地下街：自 Y1 東北往中山站（斜向帶狀，延伸到圖外）
-const ZHONGSHAN = [[1040, 245], [1065, 170], [1100, 60], [1150, -120]];
-// 層間連通（電扶梯／樓梯位置，示意）：[x,y, 從層, 到層]
-const LINKS = [
-  [700, 470, "B1", "B2"], [960, 470, "B1", "B2"], [830, 470, "B1", "B2"],
-  [760, 575, "B1", "B3"], [1000, 575, "B1", "B3"], [1060, 560, "B1", "B4"], [1060, 430, "B1", "B4"],
-  [400, 360, "B1", "B2"], [560, 360, "B1", "B2"],
-];
-// 地面：主要道路（中心線，像素）與地標
-const ROADS = [
-  ["市民大道", [[0, 285], [1200, 285]]], ["忠孝西路", [[0, 575], [1200, 575]]], ["中山北路", [[1150, 150], [1150, 800]]],
-  ["重慶北路", [[430, 0], [480, 545]]], ["承德路", [[780, 0], [780, 245]]], ["館前路", [[650, 600], [650, 800]]], ["公園路", [[930, 600], [930, 800]]],
-];
-const STATION = [630, 325, 1040, 480];   // 臺鐵臺北車站大樓（地面）
-
-// ── three.js 場景
+const X = x => (x - ORIGIN[0]) * SCALE, Zc = y => (y - ORIGIN[1]) * SCALE;
+const VS = 4, DEPTH = { G: 0, B1: -7, B2: -14, B3: -21, B4: -28 }, yOf = l => DEPTH[l] * VS, SLAB = 10;
+const GCOL = Object.fromEntries(GROUPS.map(g => [g[0], g[2]])), GNAME = Object.fromEntries(GROUPS.map(g => [g[0], g[1]]));
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)); renderer.setSize(innerWidth, innerHeight);
-renderer.setClearColor(0xEEF1EE); document.body.prepend(renderer.domElement);
-const scene = new THREE.Scene();
-const cam = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 1, 6000);
-const ctl = new OrbitControls(cam, renderer.domElement); ctl.enableDamping = true;
-scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa5a0, 1.15));
-const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(-400, 700, -300); scene.add(sun);
-
-const VS = 6.0;   // 垂直誇張：深度 ×6，層次才看得清楚
-const yOf = lv => DEPTH[lv] * VS;
-function box(x0, z0, x1, z1, y, h, color, op = 1, edge = true) {
-  const g = new THREE.BoxGeometry(Math.abs(x1 - x0), h, Math.abs(z1 - z0));
-  const m = new THREE.MeshStandardMaterial({ color, transparent: op < 1, opacity: op, roughness: .75, metalness: 0, depthWrite: op >= 1 });
-  const me = new THREE.Mesh(g, m); me.position.set((x0 + x1) / 2, y + h / 2, (z0 + z1) / 2); scene.add(me);
-  if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color: 0x33434a, transparent: true, opacity: .45 })); e.position.copy(me.position); scene.add(e); }
-  return me;
-}
-function label(text, x, y, z, size = 26, color = "#1F3A3D") {
-  const c = document.createElement("canvas"), ctx = c.getContext("2d"); const f = `600 ${size * 2}px "Microsoft JhengHei", "Segoe UI"`;
-  ctx.font = f; const w = ctx.measureText(text).width + 40; c.width = w; c.height = size * 2 + 26;
-  ctx.font = f; ctx.fillStyle = "rgba(255,255,255,.82)"; ctx.beginPath(); ctx.roundRect(0, 0, c.width, c.height, 14); ctx.fill();
-  ctx.fillStyle = color; ctx.textBaseline = "middle"; ctx.fillText(text, 20, c.height / 2 + 2);
+renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight); renderer.setClearColor(0xEEF1EE); document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 1, 12000), ctl = new OrbitControls(cam, renderer.domElement);
+ctl.enableDamping = true; scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa5a0, 1.2)); const sun = new THREE.DirectionalLight(0xffffff, 1.3); sun.position.set(-400, 900, -300); scene.add(sun);
+const objs = [];   // {o, kind, group, levels}
+const reg = (o, kind, group, levels) => { scene.add(o); objs.push({ o, kind, group, levels }); return o; };
+function label(text, size, color, bg = "rgba(255,255,255,.85)") {
+  const c = document.createElement("canvas"), g = c.getContext("2d"), f = `700 ${size * 2}px "Microsoft JhengHei","Segoe UI"`;
+  g.font = f; c.width = g.measureText(text).width + 28; c.height = size * 2 + 18; g.font = f;
+  g.fillStyle = bg; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 10); g.fill(); g.fillStyle = color; g.textBaseline = "middle"; g.fillText(text, 14, c.height / 2 + 1);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true }));
-  s.scale.set(c.width * .19, c.height * .19, 1); s.position.set(x, y, z); s.renderOrder = 10; scene.add(s); return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.scale.set(c.width * .16, c.height * .16, 1); s.renderOrder = 10; return s;
 }
+function slab(w, d, col, op) { return new THREE.Mesh(new THREE.BoxGeometry(w, SLAB, d), new THREE.MeshStandardMaterial({ color: col, roughness: .8, transparent: true, opacity: op })); }
+// 區域
+for (const z of ZONES) {
+  const col = GCOL[z.group], op = z.parking ? .3 : .9, y = yOf(z.level) + SLAB / 2; let cx, cz;
+  if (z.rect) { const [a, b, c, d] = z.rect; const m = slab((c - a) * SCALE, (d - b) * SCALE, z.parking ? "#A8B2B8" : col, op); cx = X((a + c) / 2); cz = Zc((b + d) / 2); m.position.set(cx, y, cz); reg(m, "zone", z.group, [z.level]);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0x33434a, transparent: true, opacity: .4 })); e.position.copy(m.position); reg(e, "zone", z.group, [z.level]); }
+  else { for (let i = 0; i < z.path.length - 1; i++) { const [a, b] = z.path[i], [c, d] = z.path[i + 1]; const len = Math.hypot(c - a, d - b) * SCALE + z.w * SCALE * .5;
+      const m = slab(len, z.w * SCALE, col, op); m.position.set(X((a + c) / 2), y, Zc((b + d) / 2)); m.rotation.y = -Math.atan2(d - b, c - a); reg(m, "zone", z.group, [z.level]); }
+    const k = Math.floor(z.path.length / 2) - 1; cx = X(z.path[k][0]); cz = Zc(z.path[k][1]); }
+  if (!z.id.includes("-A1") && !/^Y-T|M-B1k|BM-B1a|A1-T/.test(z.id)) { const s = label(z.name, 15, "#1F3A3D"); s.position.set(cx, y + 16, cz); reg(s, "zlabel", z.group, [z.level]); }
+}
+// 出口：黃色小柱（地面↔B1）＋編號
+for (const e of EXITS) {
+  const x = X(e.x), z = Zc(e.y), h = -yOf("B1");
+  const p = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, h, 8), new THREE.MeshStandardMaterial({ color: 0xF2C200 })); p.position.set(x, yOf("B1") + h / 2 + SLAB / 2, z); reg(p, "exit", e.group, ["G", "B1"]);
+  const s = label(e.id, 12, e.approx ? "#A0672A" : "#1A1A1A", "rgba(255,220,60,.95)"); s.position.set(x, 8, z); reg(s, "exit", e.group, ["G", "B1"]);
+}
+// 樓梯：青色柱，跨越所連接的樓層
+for (const st of STAIRS) {
+  const ys = st.levels.map(yOf), top = Math.max(...ys) + SLAB, bot = Math.min(...ys), x = X(st.x), z = Zc(st.y);
+  const p = new THREE.Mesh(new THREE.BoxGeometry(5, top - bot, 5), new THREE.MeshStandardMaterial({ color: 0x3BB4DA })); p.position.set(x, (top + bot) / 2, z); reg(p, "stair", st.group, st.levels);
+  const s = label(st.id, 12, "#fff", st.approx ? "rgba(160,103,42,.95)" : "rgba(26,120,150,.95)"); s.position.set(x + 6, (top + bot) / 2, z); reg(s, "stair", st.group, st.levels);
+}
+// 地面
+const ground = [];
+for (const [nm, pts] of ROADS) { for (let i = 0; i < pts.length - 1; i++) { const a = new THREE.Vector3(X(pts[i][0]), .3, Zc(pts[i][1])), b = new THREE.Vector3(X(pts[i + 1][0]), .3, Zc(pts[i + 1][1])), d = b.clone().sub(a);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(d.length(), 16), new THREE.MeshBasicMaterial({ color: 0xC4CACC, transparent: true, opacity: .55, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.rotation.z = -Math.atan2(d.z, d.x); m.position.copy(a.add(d.multiplyScalar(.5))); scene.add(m); ground.push(m); }
+  const s = label(nm, 12, "#55656A", "rgba(255,255,255,.6)"), e = pts[0]; s.position.set(X(e[0]), 6, Zc(e[1])); scene.add(s); ground.push(s); }
+{ const [a, b, c, d] = STATION; const m = new THREE.Mesh(new THREE.BoxGeometry((c - a) * SCALE, 30, (d - b) * SCALE), new THREE.MeshStandardMaterial({ color: 0xE9E2D2, transparent: true, opacity: .3, depthWrite: false })); m.position.set(X((a + c) / 2), 15, Zc((b + d) / 2)); scene.add(m); ground.push(m);
+  const s = label("臺北車站（地面）", 14, "#55656A"); s.position.set(X((a + c) / 2), 40, Zc((b + d) / 2)); scene.add(s); ground.push(s); }
 
-// 地面：淡色平面＋道路
-const GROUND_Y = 0;
-const gp = new THREE.Mesh(new THREE.PlaneGeometry(1500, 1200), new THREE.MeshStandardMaterial({ color: 0xF4F4EF, transparent: true, opacity: .55, depthWrite: false }));
-gp.rotation.x = -Math.PI / 2; gp.position.set(...(() => { const [a, b] = P(600, 400); return [a, GROUND_Y, b]; })()); scene.add(gp);
-for (const [nm, pts] of ROADS) {
-  const v = pts.map(([x, y]) => { const [a, b] = P(x, y); return new THREE.Vector3(a, GROUND_Y + .3, b); });
-  for (let i = 0; i < v.length - 1; i++) {
-    const d = v[i + 1].clone().sub(v[i]); const len = d.length();
-    const r = new THREE.Mesh(new THREE.PlaneGeometry(len, 26), new THREE.MeshStandardMaterial({ color: 0xC9CED0, transparent: true, opacity: .8, depthWrite: false }));
-    r.rotation.x = -Math.PI / 2; r.rotation.z = -Math.atan2(d.z, d.x); r.position.copy(v[i].clone().add(d.clone().multiplyScalar(.5))); scene.add(r);
+// ── 狀態與介面
+const state = { floor: "ALL", groups: new Set(GROUPS.map(g => g[0])) };
+const CHK = check(); window.CHECK = { issues: CHK.issues, perLevel: CHK.perLevel };
+const $ = id => document.getElementById(id);
+for (const f of ["ALL", ...LEVELS]) { const b = document.createElement("button"); b.textContent = f === "ALL" ? "全部" : LEVEL_NAME[f]; b.dataset.f = f; b.onclick = () => { state.floor = f; apply(); }; $("floors").appendChild(b); }
+for (const [id, nm, col] of GROUPS) { const l = document.createElement("label"); l.innerHTML = `<input type="checkbox" checked data-g="${id}"><i style="background:${col}"></i>${nm}`; l.firstChild.onchange = e => { e.target.checked ? state.groups.add(id) : state.groups.delete(id); apply(); }; $("groups").appendChild(l); }
+$("gall").onclick = () => { GROUPS.forEach(g => state.groups.add(g[0])); sync(); }; $("gnone").onclick = () => { state.groups.clear(); sync(); };
+function sync() { document.querySelectorAll("[data-g]").forEach(c => c.checked = state.groups.has(c.dataset.g)); apply(); }
+for (const id of ["showE", "showS", "showZ", "showG"]) $(id).onchange = apply;
+const zname = (lv, x, y) => (zonesAt(lv, x, y, 16)[0] || {}).name || "—";
+function apply() {
+  const f = state.floor;
+  document.querySelectorAll("#floors button").forEach(b => b.classList.toggle("on", b.dataset.f === f));
+  for (const { o, kind, group, levels } of objs) {
+    let v = state.groups.has(group) && (f === "ALL" || levels.includes(f));
+    if (kind === "exit") v = v && $("showE").checked; if (kind === "stair") v = v && $("showS").checked; if (kind === "zlabel") v = v && $("showZ").checked;
+    if (f === "G" && kind === "zone") v = false;
+    o.visible = v;
   }
-  const e = pts[pts.length - 1]; const [a, b] = P(e[0], e[1]);   // 道路名放在道路末端，不壓地下街標籤
-  label(nm, a, 10, b, 18, "#55656A");
+  ground.forEach(g => g.visible = $("showG").checked && (f === "ALL" || f === "G" || f === "B1"));
+  // 右側列表：這一層、這些區域的出口與樓梯
+  const lv = f === "ALL" ? null : f, G = state.groups;
+  const zs = ZONES.filter(z => G.has(z.group) && (!lv || z.level === lv));
+  const ex = EXITS.filter(e => G.has(e.group) && (!lv || lv === "G" || lv === "B1"));
+  const st = STAIRS.filter(s => G.has(s.group) && (!lv || s.levels.includes(lv)));
+  const iss = CHK.issues;
+  let h = `<h2>${lv ? LEVEL_NAME[lv] : "全部樓層"}：${zs.length} 個區域、${ex.length} 個出口、${st.length} 座樓梯</h2>`;
+  h += `<div>逐層比對：${iss.length ? `<span class="bad">${iss.length} 個問題</span><br>` + iss.join("<br>") : `<span class="ok">通過</span>（每個出口、每座樓梯的每一層都落在區域內；所有區域都能從出口走到；編號不重複）`}</div>`;
+  h += `<h2>區域</h2><table>` + zs.filter(z => !z.parking).map(z => `<tr><td class="id">${z.level}</td><td>${z.name}</td><td>${GNAME[z.group]}</td></tr>`).join("") + `</table>`;
+  h += `<h2>樓梯／電扶梯</h2><table><tr><th>編號</th><th>連接</th><th>所在區域${lv && lv !== "G" ? "（本層）" : ""}</th></tr>` + st.map(s => `<tr><td class="id ${s.approx ? "ap" : ""}">${s.id}</td><td>${s.levels.map(l => LEVEL_NAME[l]).join("–")}</td><td>${lv && lv !== "G" ? zname(lv, s.x, s.y) : s.note}</td></tr>`).join("") + `</table>`;
+  if (ex.length) h += `<h2>出口（地面–B1）</h2><table><tr><th>編號</th><th>B1 所在區域</th><th>通往</th></tr>` + ex.map(e => `<tr><td class="id ${e.approx ? "ap" : ""}">${e.id}</td><td>${zname("B1", e.x, e.y)}</td><td>${e.to}</td></tr>`).join("") + `</table>`;
+  $("list").innerHTML = h;
 }
-// 臺北車站大樓（地面、半透明）
-{ const [a0, b0] = P(STATION[0], STATION[1]), [a1, b1] = P(STATION[2], STATION[3]); box(a0, b0, a1, b1, 0, 36, 0xE9E2D2, .35); label("臺鐵臺北車站", (a0 + a1) / 2, 62, (b0 + b1) / 2, 24); }
-
-// 各區
-const LV = {};
-for (const [nm, lv, x0, y0, x1, y1, col, note] of ZONES) {
-  const [a0, b0] = P(x0, y0), [a1, b1] = P(x1, y1);
-  const op = nm.includes("停車場") ? .35 : (nm.includes("B1 大廳") ? .45 : .92);   // 車站大廳半透明，看得到下面的月台
-  const me = box(a0, b0, a1, b1, yOf(lv), H[lv] * VS * .7, col, op);
-  (LV[lv] = LV[lv] || []).push(me);
-}
-// 中山地下街（斜向）
-for (let i = 0; i < ZHONGSHAN.length - 1; i++) {
-  const [a, b] = P(...ZHONGSHAN[i]), [c, d] = P(...ZHONGSHAN[i + 1]);
-  const len = Math.hypot(c - a, d - b);
-  const g = new THREE.BoxGeometry(len, H.B1 * VS * .7, 34);
-  const me = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: C.R, roughness: .75 }));
-  me.position.set((a + c) / 2, yOf("B1") + H.B1 * VS * .7 / 2, (b + d) / 2); me.rotation.y = -Math.atan2(d - b, c - a); scene.add(me);
-}
-// 層間連通：細柱
-for (const [x, y, l0, l1] of LINKS) {
-  const [a, b] = P(x, y); const y0 = yOf(l1), y1 = yOf(l0) + 2;
-  const c = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, y1 - y0, 12), new THREE.MeshStandardMaterial({ color: 0x5FC3E4, roughness: .4 }));
-  c.position.set(a, (y0 + y1) / 2, b); scene.add(c);
-}
-// 標籤
-const LBL = [
-  ["Y 區台北地下街", 600, 284, "B1", C.Y], ["K 區地下街", 780, 513, "B1", C.K], ["Z 區站前地下街", 590, 574, "B1", C.Z],
-  ["機場捷運 A1", 395, 362, "B1", C.A1], ["捷運北門站", 60, 395, "B1", C.G], ["中山地下街 → 中山站", 1090, 70, "B1", C.R],
-  ["臺鐵／高鐵月台 B2", 850, 407, "B2", C.tra], ["板南線 B3", 900, 578, "B3", C.BL], ["淡水信義線 B4", 1060, 650, "B4", C.RD],
-  ["捷運臺北車站", 940, 574, "B1", C.BL],
-];
-for (const [t, x, y, lv, col] of LBL) { const [a, b] = P(x, y); label(t, a, yOf(lv) + 30, b, 24, col); }
-// 層名尺標（西側）
-for (const lv of ["B1", "B2", "B3", "B4"]) label(lv, -690, yOf(lv) + 10, 260, 30, "#33434A");   // 層名尺標（西南角）
-
-// 圖例
-const leg = [["Y 區台北地下街", C.Y], ["K 區地下街", C.K], ["Z 區站前地下街", C.Z], ["中山地下街", C.R], ["臺鐵／高鐵", C.tra],
-  ["機場捷運 A1", C.A1], ["板南線（藍）", C.BL], ["淡水信義線（紅）", C.RD], ["松山新店線北門站", C.G], ["層間電扶梯（示意）", "#5FC3E4"]];
-document.getElementById("legend").innerHTML = leg.map(([t, c]) => `<div><i style="background:${c}"></i>${t}</div>`).join("") + `<div style="margin-top:4px;opacity:.7">深度 ×${VS} 垂直誇張</div>`;
-
-// 視角
-const VIEWS = {
-  "總覽": [[650, 900, 1050], [120, -80, 60]],
-  "東南俯瞰": [[1150, 560, 820], [200, -90, 40]],
-  "剖面（從南看）": [[200, -80, 1100], [200, -90, 0]],
-  "正上方": [[200, 1700, 160], [200, -40, 150]],
-  "車站核心": [[620, 300, 560], [300, -100, 40]],
-};
-window.setView = name => { const [p, t] = VIEWS[name]; cam.position.set(...p); ctl.target.set(...t); cam.up.set(0, 1, 0); ctl.update(); renderer.render(scene, cam); };
-const vb = document.getElementById("views");
-for (const k of Object.keys(VIEWS)) { const b = document.createElement("button"); b.textContent = k; b.onclick = () => setView(k); vb.appendChild(b); }
-setView("總覽");
+const VIEWS = { "總覽": [[60, 1900, 1750], [60, -40, -380]], "車站核心": [[250, 520, 650], [250, -60, 60]], "北門—A1": [[-380, 420, 520], [-330, -50, -40]],
+  "中山地下街": [[1150, 700, -150], [520, -30, -500]], "剖面（從南看）": [[150, -40, 1500], [150, -60, 0]], "正上方": [[250, 2300, -249], [250, 0, -250]] };
+window.setView = n => { const [p, t] = VIEWS[n]; cam.position.set(...p); ctl.target.set(...t); ctl.update(); };
+window.setFloor = f => { state.floor = f; apply(); }; window.setGroups = a => { state.groups = new Set(a); sync(); };
+for (const k in VIEWS) { const b = document.createElement("button"); b.textContent = k; b.onclick = () => setView(k); $("views").appendChild(b); }
+setView("總覽"); apply();
 addEventListener("resize", () => { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 (function loop() { ctl.update(); renderer.render(scene, cam); requestAnimationFrame(loop); })();
 window.READY = true;
