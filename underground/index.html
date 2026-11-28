@@ -20,7 +20,7 @@
   label{display:block;line-height:1.9;cursor:pointer} label i{display:inline-block;width:12px;height:12px;border-radius:2px;margin:0 6px 0 4px;vertical-align:-1px}
   table{border-collapse:collapse;width:100%} td,th{padding:3px 4px;border-bottom:1px solid #E3E8E8;text-align:left;vertical-align:top} th{font-size:12px;color:#5A6B6D}
   td.id{font-weight:700;white-space:nowrap} .ap{color:#A0672A} .ok{color:#2A7A4A;font-weight:700} .bad{color:#B3362B;font-weight:700}
-  #note{position:absolute;left:300px;bottom:12px;font-size:11px;color:#5A6B6D;max-width:calc(100% - 660px)}
+  #note{position:absolute;left:300px;bottom:12px;font-size:11px;color:#5A6B6D;max-width:calc(100% - 330px)}
 </style>
 <script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
 </head>
@@ -34,7 +34,8 @@
   <label><input type="checkbox" id="showZ" checked> 區域名稱</label><label><input type="checkbox" id="showG" checked> 地面道路</label>
   <h2>視角</h2><div class="btns" id="views"></div>
 </div>
-<div class="panel" id="right"><div id="list"></div></div>
+<div class="panel" id="right" style="display:none"><div id="list"></div></div>
+<button id="tgl" style="position:absolute;right:12px;top:12px;z-index:5">顯示清單</button>
 <div id="note">示意模型：平面依臺北市觀光傳播局地下街詳細地圖，樓層依捷運各站剖面圖；深度 ×4 垂直誇張。橘色字＝位置為估計。中山站、雙連站位置為外推。</div>
 <script type="module">
 import * as THREE from "three";
@@ -104,6 +105,7 @@ for (const [id, nm, col] of GROUPS) { const l = document.createElement("label");
 $("gall").onclick = () => { GROUPS.forEach(g => state.groups.add(g[0])); sync(); }; $("gnone").onclick = () => { state.groups.clear(); sync(); };
 function sync() { document.querySelectorAll("[data-g]").forEach(c => c.checked = state.groups.has(c.dataset.g)); apply(); }
 for (const id of ["showE", "showS", "showZ", "showG"]) $(id).onchange = apply;
+$("tgl").onclick = () => { const r = $("right"), on = r.style.display === "none"; r.style.display = on ? "" : "none"; r.style.top = "50px"; $("tgl").textContent = on ? "關閉清單" : "顯示清單"; };   // 右側清單預設關閉（使用者 2026-11-28）
 const zname = (lv, x, y) => (zonesAt(lv, x, y, 16)[0] || {}).name || "—";
 function apply() {
   const f = state.floor;
