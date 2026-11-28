@@ -39,7 +39,7 @@
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "./lib/OrbitControls.js";
-import { SCALE, ORIGIN, LEVELS, LEVEL_NAME, GROUPS, ZONES, EXITS, STAIRS, ROADS, STATION, zonesAt, check } from "./data.js";
+import { SCALE, ORIGIN, LEVELS, LEVEL_NAME, GROUPS, ZONES, EXITS, STAIRS, ROADS, STATION, TRACKS, zonesAt, check } from "./data.js";
 
 const X = x => (x - ORIGIN[0]) * SCALE, Zc = y => (y - ORIGIN[1]) * SCALE;
 const VS = 4, DEPTH = { G: 0, B1: -7, B2: -14, B3: -21, B4: -28 }, yOf = l => DEPTH[l] * VS, SLAB = 10;
@@ -60,7 +60,7 @@ function label(text, size, color, bg = "rgba(255,255,255,.85)") {
 function slab(w, d, col, op) { return new THREE.Mesh(new THREE.BoxGeometry(w, SLAB, d), new THREE.MeshStandardMaterial({ color: col, roughness: .8, transparent: true, opacity: op })); }
 // 區域
 for (const z of ZONES) {
-  const col = GCOL[z.group], op = z.parking ? .3 : .9, y = yOf(z.level) + SLAB / 2; let cx, cz;
+  const col = z.color || GCOL[z.group], op = z.parking ? .3 : .9, y = yOf(z.level) + SLAB / 2; let cx, cz;
   if (z.rect) { const [a, b, c, d] = z.rect; const m = slab((c - a) * SCALE, (d - b) * SCALE, z.parking ? "#A8B2B8" : col, op); cx = X((a + c) / 2); cz = Zc((b + d) / 2); m.position.set(cx, y, cz); reg(m, "zone", z.group, [z.level]);
     const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0x33434a, transparent: true, opacity: .4 })); e.position.copy(m.position); reg(e, "zone", z.group, [z.level]); }
   else { for (let i = 0; i < z.path.length - 1; i++) { const [a, b] = z.path[i], [c, d] = z.path[i + 1]; const len = Math.hypot(c - a, d - b) * SCALE + z.w * SCALE * .5;
@@ -68,6 +68,11 @@ for (const z of ZONES) {
     const k = Math.floor(z.path.length / 2) - 1; cx = X(z.path[k][0]); cz = Zc(z.path[k][1]); }
   if (!z.id.includes("-A1") && !/^Y-T|M-B1k|BM-B1a|A1-T/.test(z.id)) { const s = label(z.name, 15, "#1F3A3D"); s.position.set(cx, y + 16, cz); reg(s, "zlabel", z.group, [z.level]); }
 }
+// 軌道：兩條並行的細長方塊，依每個點的深度連起來
+for (const tr of TRACKS) for (let i = 0; i < tr.pts.length - 1; i++) { const [a, b, da] = tr.pts[i], [c, d, db] = tr.pts[i + 1];
+  const A = new THREE.Vector3(X(a), da * VS + 3, Zc(b)), B = new THREE.Vector3(X(c), db * VS + 3, Zc(d)), len = A.distanceTo(B);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(9, 3, len + 4), new THREE.MeshStandardMaterial({ color: tr.color })); m.position.copy(A.clone().add(B).multiplyScalar(.5)); m.lookAt(B); reg(m, "track", tr.group, tr.levels); }
+{ const s = label("淡水信義線", 14, "#fff", "rgba(200,49,47,.95)"); s.position.set(X(1830), -17 * VS + 16, Zc(-150)); reg(s, "zlabel", "RL", ["B2", "B3", "B4"]); }
 // 出口：黃色小柱（地面↔B1）＋編號
 for (const e of EXITS) {
   const x = X(e.x), z = Zc(e.y), h = -yOf("B1");
